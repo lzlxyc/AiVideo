@@ -1,13 +1,15 @@
 import os
 import time
+import base64
 import requests
 from tkinter import N
-from urllib.parse import urlparse
 from dotenv import load_dotenv
+from urllib.parse import urlparse
 # 通过 pip install 'volcengine-python-sdk[ark]' 安装方舟SDK
 from volcenginesdkarkruntime import Ark
 
 load_dotenv()
+
 
 class VideoModelApi:
     def __init__(self, model=None, base_url=None, api_key=None):
@@ -18,7 +20,7 @@ class VideoModelApi:
             # 从环境变量中获取您的 API Key。此为默认方式，您可根据需要进行修改
             api_key=api_key or os.getenv('VIDEO_API_KEY')
         )
-        
+        print(f"======= MODEL INIT:{self.model} ========")
         # 计费配置（单位：元/秒）
         self.pricing = {
             "doubao-seedance-1-0-pro": {
@@ -38,23 +40,36 @@ class VideoModelApi:
             },
         }
 
-    def create_video(self, prompt: str, 
-            output_filename: str = None, 
-            output_dir: str = "./outputs",
-            resolution: str = "1080p",
-            duration: int = 5,
-            camerafixed: bool = False,
-            watermark: bool = True,
-        ) -> None:
-        """
-        生成视频并下载
+    def _text_content(self, prompt: str) -> dict:
+        return {"type": "text", "text": prompt}
+
+    def _img_content(self, img_path: str) -> dict:
+        if 'http' not in img_path:
+            with open(img_path, "rb") as image_file:
+                base64_string = base64.b64encode(image_file.read()).decode("utf-8")
+            url = f"data:image/jpeg;base64,{base64_string}"
+        else:
+            url = img_path
         
-        Args:
-            prompt: 视频生成提示词
-            output_filename: 自定义输出文件名（不含扩展名），默认为任务ID
-            output_dir: 视频保存目录，默认为 ./output
-        """
+        return {
+            "type": "image_url",
+            "image_url": {"url": url}
+        }
+
+    def create_video(self, 
+            prompt: str, first_frame: str, end_frame: str,
+            output_filename: str = None, output_dir: str = "./outputs",
+            resolution: str = "1080p", duration: int = 5,
+            camerafixed: bool = False, watermark: bool = True,
+        ) -> None:
         os.makedirs(output_dir, exist_ok=True)
+
+        # base64_string = get_pic_base64("D:/lzl_private/my_githubs/AiVideo/notebooks/1.png")
+        contents = [self._text_content(prompt)]
+        if first_frame:
+            contents.append(self._img_content(first_frame))
+        if end_frame:
+            contents.append(self._img_content(end_frame))
 
         print("----- create request -----")
         create_result = self.client.content_generation.tasks.create(
@@ -63,13 +78,7 @@ class VideoModelApi:
             duration=duration,
             camera_fixed=camerafixed,
             watermark=watermark,
-            content=[
-                {
-                    # 文本提示词与参数组合
-                    "type": "text",
-                    "text": prompt
-                }
-            ]
+            content=contents
         )
         print(create_result)
 
@@ -101,14 +110,30 @@ class VideoModelApi:
                 time.sleep(6)
 
 
-    def run(self, prompt: str, 
+    def run(self, 
+            prompt: str, first_frame: str= None , end_frame: str = None,
             output_filename: str = None, output_dir: str = "./outputs",
-            resolution: str = "1080p", duration: int = 10,
+            resolution: str = "1080p", duration: int = 5,
             camerafixed: bool = False, watermark: bool = True,
         ) -> None:
+        """
+        生成视频并下载
+        
+        Args:
+            prompt: 视频生成提示词
+            first_frame: 首帧图片路径或URL（可选）
+            end_frame: 尾帧图片路径或URL（可选）
+            output_filename: 自定义输出文件名（不含扩展名），默认为任务ID
+            output_dir: 视频保存目录，默认为 ./outputs
+            resolution: 视频分辨率，可选 480p/720p/1080p，默认为 1080p
+            duration: 视频时长（秒），默认为 5
+            camerafixed: 是否固定相机，默认为 False
+            watermark: 是否添加水印，默认为 True
+        """
         stime = time.time()
         result = self.create_video(
-            prompt, output_filename, output_dir, 
+            prompt, first_frame, end_frame, 
+            output_filename, output_dir, 
             resolution, duration, camerafixed, watermark
         )    
         # 计算并输出费用
