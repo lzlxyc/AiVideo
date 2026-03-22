@@ -2,16 +2,18 @@ import os
 import time
 import base64
 import requests
+import cv2
 from tkinter import N
 from dotenv import load_dotenv
 from urllib.parse import urlparse
 # 通过 pip install 'volcengine-python-sdk[ark]' 安装方舟SDK
 from volcenginesdkarkruntime import Ark
+from typing import Optional, List, Dict
 
 load_dotenv()
 
 
-class VideoModelApi:
+class DoubaoVideoApi:
     def __init__(self, model=None, base_url=None, api_key=None):
         self.model = model or os.getenv('MODEL_NAME')
         self.client = Ark(
@@ -61,11 +63,12 @@ class VideoModelApi:
             output_filename: str = None, output_dir: str = "./outputs",
             resolution: str = "1080p", duration: int = 5,
             camerafixed: bool = False, watermark: bool = True,
-        ) -> None:
+        ) -> Dict:
         os.makedirs(output_dir, exist_ok=True)
 
         # base64_string = get_pic_base64("D:/lzl_private/my_githubs/AiVideo/notebooks/1.png")
         contents = [self._text_content(prompt)]
+        print("========== 输入：", contents)
         if first_frame:
             contents.append(self._img_content(first_frame))
         if end_frame:
@@ -91,20 +94,29 @@ class VideoModelApi:
             status = get_result.status
             if status == "succeeded":
                 print("----- task succeeded -----")
-                print(get_result)
+                # print(get_result)
                 
+                # 计算费用
+                self._calculate_cost(get_result, resolution, duration)
+
                 # 下载视频
                 video_url = get_result.content.video_url
                 if video_url:
                     local_path = self._download_video(
                         video_url, output_filename or task_id, output_dir
                         )
-                    print(f"Video saved to: {local_path}")
-                return get_result
+                    # print(f"Video saved to: {local_path}")
+                return {
+                    "status": status,
+                    "video_path": local_path,
+                }
             elif status == "failed":
                 print("----- task failed -----")
                 print(f"Error: {get_result.error}")
-                return get_result
+                return {
+                    "status": status,
+                    "error": get_result.error,
+                }
             else:
                 print(f"Current status: {status}, Retrying after 6 seconds...")
                 time.sleep(6)
@@ -115,7 +127,7 @@ class VideoModelApi:
             output_filename: str = None, output_dir: str = "./outputs",
             resolution: str = "1080p", duration: int = 5,
             camerafixed: bool = False, watermark: bool = True,
-        ) -> None:
+        ) -> Dict:
         """
         生成视频并下载
         
@@ -136,16 +148,17 @@ class VideoModelApi:
             output_filename, output_dir, 
             resolution, duration, camerafixed, watermark
         )    
-        # 计算并输出费用
-        if result and result.status == "succeeded":
-            self._calculate_cost(result, resolution, duration)
 
         use_time = round(time.time() - stime, 4)
         print(f"==>> Total time: {use_time} seconds")
         print("=" * 50) 
 
+        return result
 
-    def _calculate_cost(self, result, resolution: str, duration: int) -> None:
+
+    def _calculate_cost(
+            self, result, resolution: str, duration: int
+        ) -> None:
         """
         计算并输出本次调用的费用
         
@@ -218,3 +231,56 @@ class VideoModelApi:
         
         print(f"Download completed: {local_path}")
         return local_path
+
+    def extract_last_frame(self, video_path: str, output_dir: str = "./outputs") -> str:
+        """
+        提取视频的最后一帧并保存为图片
+        
+        Args:
+            video_path: 视频文件路径
+            output_dir: 输出目录
+            
+        Returns:
+            最后一帧图片的保存路径
+        """
+        print(f"Extracting last frame from {video_path}...")
+        
+        cap = cv2.VideoCapture(video_path)
+        
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        print(f"Total frames: {total_frames}")
+        
+        cap.set(cv2.CAP_PROP_POS_FRAMES, total_frames - 1)
+        ret, frame = cap.read()
+        
+        if not ret:
+            cap.release()
+            raise Exception(f"Failed to read frame from {video_path}")
+        
+        os.makedirs(output_dir, exist_ok=True)
+        
+        base_name = os.path.splitext(os.path.basename(video_path))[0]
+        output_path = os.path.join(output_dir, f"{base_name}_last_frame.jpg")
+        
+        cv2.imwrite(output_path, frame)
+        cap.release()
+        
+        print(f"Last frame saved to: {output_path}")
+        return output_path
+
+
+if __name__ == "__main__":
+    prompt = """一名女性，年龄区间约为 18–22 岁。声音音域偏高但不尖锐，发声轻快，气声比例适中，音色明亮而有弹性。
+    语速中等偏快，语调起伏明显。说中文普通话高冷的说：“我要吃屎。“"""
+
+    video_model_api = DoubaoVideoApi()
+    video_model_api.run(
+        prompt=prompt,
+        # first_frame="D:/lzl_private/my_githubs/AiVideo/notebooks/2.png",
+        # end_frame="D:/lzl_private/my_githubs/AiVideo/notebooks/1.png",
+        output_filename="桃花源",
+        resolution="720p",
+        duration=10,
+        camerafixed=False,
+        watermark=True
+    )
