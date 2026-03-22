@@ -9,9 +9,6 @@ def main():
     prompt = """一名女性，年龄区间约为 18–22 岁。声音音域偏高但不尖锐，发声轻快，气声比例适中，音色明亮而有弹性。
     语速中等偏快，语调起伏明显。说中文普通话高冷的说：“我要吃屎。“"""
     prompt = """
-        以下是您所需的《寻·桃源》视频脚本的Markdown格式整理，可直接复制使用：
-
-        ```markdown
         # 《寻·桃源》视频脚本
 
         **主题**：寻·桃源  
@@ -46,9 +43,6 @@ def main():
         - **画面描述**：（高潮画面）眼前是一幅震撼的田园画卷：平坦宽广的土地，整齐的屋舍，肥沃的良田，清澈的池塘，茂盛的桑竹。田间小径交错相通，鸡鸣狗吠之声仿佛隔着画面传来。远处有农夫在犁地，炊烟袅袅升起。色调转为温暖、明快的青绿色。
         - **运镜**：缓慢的无人机视角（上帝视角），从高处俯瞰整个村庄，缓缓向前推进。
         - **关键词**：土地平旷，屋舍俨然，良田美池桑竹，阡陌交通，鸡犬相闻，世外桃源，青绿山水
-        ```
-
-        您可以直接复制此内容，粘贴到支持Markdown的编辑器（如Notion、Typora、Obsidian等）中使用。如需调整时长、镜头细节或增加旁白/字幕，可在此基础上继续补充。
     """
 
     video_model_api.run(
@@ -56,8 +50,8 @@ def main():
         # first_frame="D:/lzl_private/my_githubs/AiVideo/notebooks/2.png",
         # end_frame="D:/lzl_private/my_githubs/AiVideo/notebooks/1.png",
         output_filename="桃花源",
-        resolution="1080p",
-        duration=12,
+        resolution="720p",
+        duration=15,
         camerafixed=False,
         watermark=True
     )

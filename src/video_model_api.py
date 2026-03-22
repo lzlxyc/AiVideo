@@ -183,7 +183,9 @@ class VideoModelApi:
         print("=" * 50)
 
 
-    def _download_video(self, video_url: str, filename: str, output_dir: str) -> str:
+    def _download_video(
+            self, video_url: str, filename: str, output_dir: str
+        ) -> str:
         """
         下载视频到本地
         
