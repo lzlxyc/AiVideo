@@ -10,7 +10,9 @@
 
 import os
 import re
+import ffmpeg
 from video_services.doubao_video_api import DoubaoVideoApi
+
 
 
 class ScriptParser:
@@ -238,6 +240,188 @@ class ContinuousVideoGenerator:
         
         return output_path
 
+    
+    def merge_videos_v2(
+            self, video_paths: list, 
+            output_filename: str = "merged_video.mp4",
+            mode: str = "smooth"
+        ) -> str:
+        """
+        利用ffmpeg-python进行视频拼接：自然过渡
+        
+        Args:
+            video_paths: 视频文件路径列表
+            output_filename: 输出文件名
+            mode: 拼接模式
+                - "concat": 快速拼接，无重编码
+                - "smooth": 平滑过渡，带淡入淡出效果
+                - "xfade": XFade过渡，多种过渡效果
+                
+        Returns:
+            合并后的视频路径
+        """
+        print(f"\n{'=' * 60}")
+        print(f"开始合并视频 (FFmpeg-Python, 模式: {mode})...")
+        print(f"{'=' * 60}")
+        
+        if not video_paths:
+            print("没有视频需要合并")
+            return None
+        
+        if len(video_paths) == 1:
+            print("只有一个视频，无需合并")
+            return video_paths[0]
+        
+        output_path = os.path.join(self.output_dir, output_filename)
+        
+        try:
+            if mode == "concat":
+                return self._merge_concat(video_paths, output_path)
+            elif mode == "smooth":
+                return self._merge_smooth(video_paths, output_path)
+            elif mode == "xfade":
+                return self._merge_xfade(video_paths, output_path)
+            else:
+                print(f"未知的模式: {mode}，使用默认的smooth模式")
+                return self._merge_smooth(video_paths, output_path)
+                
+        except ffmpeg.Error as e:
+            print(f"✗ FFmpeg错误: {e.stderr.decode() if e.stderr else str(e)}")
+            return None
+        except Exception as e:
+            print(f"✗ 合并过程出错: {str(e)}")
+            return None
+    
+    def _merge_concat(self, video_paths: list, output_path: str) -> str:
+        """
+        快速拼接模式：无损拼接，速度快
+        """
+        print("使用快速拼接模式...")
+        
+        list_file = os.path.join(self.output_dir, "concat_list.txt")
+        with open(list_file, 'w', encoding='utf-8') as f:
+            for video_path in video_paths:
+                abs_path = os.path.abspath(video_path).replace('\\', '/')
+                f.write(f"file '{abs_path}'\n")
+        
+        for i, video_path in enumerate(video_paths, 1):
+            print(f"  {i}. {os.path.basename(video_path)}")
+        
+        (
+            ffmpeg
+            .input(list_file, format='concat', safe=0)
+            .output(output_path, c='copy')
+            .overwrite_output()
+            .run(capture_stdout=True, capture_stderr=True)
+        )
+        
+        if os.path.exists(list_file):
+            os.remove(list_file)
+        
+        print(f"✓ 视频合并完成: {output_path}")
+        print(f"{'=' * 60}")
+        return output_path
+    
+    def _merge_smooth(self, video_paths: list, output_path: str) -> str:
+        """
+        平滑过渡模式：带淡入淡出效果
+        """
+        print("使用平滑过渡模式...")
+        
+        streams = []
+        for i, video_path in enumerate(video_paths):
+            print(f"  {i+1}. {os.path.basename(video_path)}")
+            
+            abs_path = os.path.abspath(video_path).replace('\\', '/')
+            
+            probe = ffmpeg.probe(abs_path)
+            duration = float(probe['streams'][0]['duration'])
+            
+            stream = ffmpeg.input(abs_path)
+            
+            if i == 0:
+                video = stream.video.filter('fade', t='out', st=duration-0.5, d=0.5)
+            elif i == len(video_paths) - 1:
+                video = stream.video.filter('fade', t='in', st=0, d=0.5)
+            else:
+                video = (
+                    stream.video
+                    .filter('fade', t='in', st=0, d=0.5)
+                    .filter('fade', t='out', st=duration-0.5, d=0.5)
+                )
+            
+            streams.append(video)
+        
+        (
+            ffmpeg
+            .concat(*streams)
+            .output(output_path)
+            .overwrite_output()
+            .run(capture_stdout=True, capture_stderr=True)
+        )
+        
+        print(f"✓ 视频合并完成: {output_path}")
+        print(f"{'=' * 60}")
+        return output_path
+    
+    def _merge_xfade(self, video_paths: list, output_path: str) -> str:
+        """
+        XFade过渡模式：多种过渡效果（淡入淡出、滑动、擦除等）
+        """
+        print("使用XFade过渡模式...")
+        
+        transitions = [
+            'fade', 'slideleft', 'slideright', 'slideup', 'slidedown',
+            'circleopen', 'circleclose', 'rectcrop', 'distance',
+            'pixelize', 'diagtl', 'diagtr', 'diagbl', 'diagbr',
+            'hlslice', 'hrslice', 'vuslice', 'vdslice', 'dissolve'
+        ]
+        
+        if len(video_paths) < 2:
+            print("XFade至少需要2个视频")
+            return None
+        
+        for i, video_path in enumerate(video_paths):
+            print(f"  {i+1}. {os.path.basename(video_path)}")
+        
+        abs_path = os.path.abspath(video_paths[0]).replace('\\', '/')
+        probe = ffmpeg.probe(abs_path)
+        duration = float(probe['streams'][0]['duration'])
+        
+        transition_duration = 0.5
+        offset = duration - transition_duration
+        
+        current = ffmpeg.input(abs_path).video
+        
+        for i in range(1, len(video_paths)):
+            next_path = os.path.abspath(video_paths[i]).replace('\\', '/')
+            next_probe = ffmpeg.probe(next_path)
+            next_duration = float(next_probe['streams'][0]['duration'])
+            
+            transition = transitions[i % len(transitions)]
+            
+            next_video = ffmpeg.input(next_path).video
+            
+            current = ffmpeg.crossfade(
+                current,
+                next_video,
+                duration=transition_duration,
+                offset=offset,
+                transition=transition
+            )
+            
+            offset = next_duration - transition_duration
+        
+        (
+            current
+            .output(output_path)
+            .overwrite_output()
+            .run(capture_stdout=True, capture_stderr=True)
+        )
+        
+        print(f"✓ 视频合并完成: {output_path}")
+        print(f"{'=' * 60}")
+        return output_path
 
 def main():
     """
@@ -254,7 +438,9 @@ def main():
     - **画面描述**：暮春时节，一片落英缤纷的桃树林。镜头转到旁边立了的牌子，用正楷写着"彩园寨"三个大字。
     - 一位年龄区间约为18–22岁美女，在路上走过来。
     - **关键词**：武陵美女，扁舟，桃花林，落英缤纷，逆光，梦幻氛围
+    """
 
+    a = """
     #
     - **画面描述**：美女走近牌子，伸手触摸"彩园寨"三个字。镜头特写她的手，手指轻轻划过字迹。
     - **关键词**：特写，手指，触摸，怀旧，细节
@@ -288,8 +474,59 @@ def main():
     )
     
     if video_paths:
-        generator.merge_videos(video_paths, "taoyuan_story.mp4")
+        generator.merge_videos_v2(video_paths, "taoyuan_story.mp4")
 
 
 if __name__ == "__main__":
-    main()
+    # main()
+
+    def _merge_smooth(video_paths: list, output_path: str) -> str:
+        print("使用平滑过渡模式...")
+        
+        streams = []
+        for i, video_path in enumerate(video_paths):
+            print(f"  {i+1}. {os.path.basename(video_path)}")
+            
+            abs_path = os.path.abspath(video_path).replace('\\', '/')
+            
+            probe = ffmpeg.probe(abs_path)
+            duration = float(probe['streams'][0]['duration'])
+            
+            stream = ffmpeg.input(abs_path)
+            
+            if i == 0:
+                video = stream.video.filter('fade', t='out', st=duration-0.5, d=0.5)
+            elif i == len(video_paths) - 1:
+                video = stream.video.filter('fade', t='in', st=0, d=0.5)
+            else:
+                video = (
+                    stream.video
+                    .filter('fade', t='in', st=0, d=0.5)
+                    .filter('fade', t='out', st=duration-0.5, d=0.5)
+                )
+            
+            streams.append(video)
+        
+        (
+            ffmpeg
+            .concat(*streams)
+            .output(output_path)
+            .overwrite_output()
+            .run(capture_stdout=True, capture_stderr=True)
+        )
+        
+        print(f"✓ 视频合并完成: {output_path}")
+        print(f"{'=' * 60}")
+
+
+    video_paths = [
+        'D:/lzl_private/my_githubs/AiVideo/outputs/continuous/segment_000.mp4',
+        'D:/lzl_private/my_githubs/AiVideo/outputs/continuous/segment_001.mp4', ]
+    output_path = 'D:/lzl_private/my_githubs/AiVideo/outputs/continuous/segment_merge.mp4'
+    _merge_smooth(video_paths, output_path)
+
+
+
+
+
+    
